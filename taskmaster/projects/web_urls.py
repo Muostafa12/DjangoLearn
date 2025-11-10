@@ -1,0 +1,13 @@
+"""
+Web URL configuration for the projects app (Django templates).
+"""
+
+from django.urls import path
+from django.views.generic import TemplateView
+
+app_name = 'web'
+
+urlpatterns = [
+    # Placeholder for web interface
+    path('', TemplateView.as_view(template_name='home.html'), name='home'),
+]

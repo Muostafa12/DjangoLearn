@@ -1,0 +1,39 @@
+# Core Django
+Django==5.0.1
+python-decouple==3.8
+
+# Database
+psycopg2-binary==2.9.9
+
+# Redis & Caching
+redis==5.0.1
+django-redis==5.4.0
+
+# Celery for async tasks
+celery==5.3.6
+
+# REST Framework
+djangorestframework==3.14.0
+django-filter==23.5
+
+# Authentication & Security
+djangorestframework-simplejwt==5.3.1
+
+# CORS headers for API
+django-cors-headers==4.3.1
+
+# Django extensions for better development
+django-extensions==3.2.3
+
+# Pillow for image handling
+Pillow==10.2.0
+
+# Markdown support for task descriptions
+markdown==3.5.2
+
+# For development
+django-debug-toolbar==4.2.0
+
+# Testing
+faker==22.6.0
+factory-boy==3.3.0

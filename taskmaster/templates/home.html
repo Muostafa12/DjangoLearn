@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMaster - Learn Django with Redis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #764ba2;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .api-section {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .endpoint {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 3px solid #667eea;
+            font-family: monospace;
+        }
+        .method {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .get { background: #48bb78; color: white; }
+        .post { background: #4299e1; color: white; }
+        .put { background: #ed8936; color: white; }
+        .delete { background: #f56565; color: white; }
+        ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        code {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to TaskMaster!</h1>
+        <p>A comprehensive Django project to learn Django with Redis integration.</p>
+
+        <h2>Features</h2>
+        <ul>
+            <li>Custom User Authentication with Email</li>
+            <li>Project Management with Team Collaboration</li>
+            <li>Task Management with Subtasks</li>
+            <li>Comments and Attachments</li>
+            <li>Real-time Notifications</li>
+            <li>Redis Caching</li>
+            <li>Celery for Async Tasks</li>
+            <li>RESTful API with Django REST Framework</li>
+        </ul>
+
+        <h2>API Endpoints</h2>
+
+        <div class="api-section">
+            <h3>Authentication</h3>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/token/</span> - Get JWT token
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/token/refresh/</span> - Refresh JWT token
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/accounts/register/</span> - Register new user
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Users</h3>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/accounts/users/me/</span> - Get current user
+            </div>
+            <div class="endpoint">
+                <span class="method put">PUT</span>
+                <span>/api/accounts/users/update_profile/</span> - Update profile
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Projects</h3>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/projects/</span> - List all projects
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/projects/</span> - Create project
+            </div>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/projects/{id}/</span> - Get project details
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/projects/{id}/add_member/</span> - Add member
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Tasks</h3>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/tasks/</span> - List all tasks
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/tasks/</span> - Create task
+            </div>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/tasks/{id}/</span> - Get task details
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/tasks/{id}/mark_completed/</span> - Mark as completed
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Notifications</h3>
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <span>/api/notifications/</span> - List notifications
+            </div>
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <span>/api/notifications/mark_all_as_read/</span> - Mark all as read
+            </div>
+        </div>
+
+        <h2>Admin Panel</h2>
+        <p>Access the Django admin panel at <a href="/admin/">/admin/</a></p>
+
+        <h2>Documentation</h2>
+        <p>Check the <code>README.md</code> file for setup instructions and detailed documentation.</p>
+    </div>
+</body>
+</html>
