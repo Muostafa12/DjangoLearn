@@ -11,6 +11,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     postgresql-client \
+    redis-tools \
     gcc \
     python3-dev \
     musl-dev \
@@ -27,10 +28,6 @@ COPY . /app/
 
 # Create necessary directories
 RUN mkdir -p /app/staticfiles /app/media /app/logs
-
-# Run migrations and collect static files (optional, can be done separately)
-# RUN python manage.py migrate --noinput
-# RUN python manage.py collectstatic --noinput
 
 # Expose port
 EXPOSE 8000

@@ -13,7 +13,7 @@ from rest_framework_simplejwt.views import (
 
 urlpatterns = [
     # Admin
-    path('admin/', admin.site.admin),
+    path('admin/', admin.site.urls),
 
     # API Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
