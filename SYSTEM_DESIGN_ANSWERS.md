@@ -3426,3 +3426,1711 @@ def reshard_user(user_id, old_shard, new_shard):
 ---
 
 *(To be continued with questions 15-40...)*
+
+### 15. What is the difference between REST and GraphQL?
+
+**REST**: Architectural style with fixed endpoints returning predefined data structures
+**GraphQL**: Query language allowing clients to request exactly the data they need
+
+```
+REST API:
+GET /api/users/123
+Response:
+{
+  "id": 123,
+  "name": "Alice",
+  "email": "alice@example.com",
+  "bio": "...",
+  "avatar": "...",
+  "settings": {...},
+  "metadata": {...}
+}
+// Returns ALL fields (over-fetching)
+
+GET /api/users/123/tasks
+Response:
+{
+  "tasks": [...]
+}
+// Need separate request (under-fetching, N+1 problem)
+
+GraphQL API:
+POST /graphql
+Query:
+{
+  user(id: 123) {
+    name
+    email
+    tasks {
+      title
+      status
+    }
+  }
+}
+
+Response:
+{
+  "data": {
+    "user": {
+      "name": "Alice",
+      "email": "alice@example.com",
+      "tasks": [
+        {"title": "Fix bug", "status": "active"},
+        {"title": "Deploy", "status": "completed"}
+      ]
+    }
+  }
+}
+// Returns ONLY requested fields (efficient)
+```
+
+**Django REST Framework (REST) Implementation:**
+
+```python
+# REST API with DRF
+from rest_framework import viewsets, serializers
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'email', 'bio', 'avatar']
+
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = ['id', 'title', 'status', 'priority']
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+
+# URLs
+router.register('users', UserViewSet)
+router.register('tasks', TaskViewSet)
+
+# Client needs multiple requests:
+# GET /api/users/123/
+# GET /api/tasks/?user=123
+```
+
+**Graphene (GraphQL) Implementation:**
+
+```python
+# GraphQL with Graphene
+import graphene
+from graphene_django import DjangoObjectType
+
+class UserType(DjangoObjectType):
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'email', 'bio', 'avatar']
+
+class TaskType(DjangoObjectType):
+    class Meta:
+        model = Task
+        fields = ['id', 'title', 'status', 'priority']
+
+class Query(graphene.ObjectType):
+    user = graphene.Field(UserType, id=graphene.Int())
+    all_users = graphene.List(UserType)
+    task = graphene.Field(TaskType, id=graphene.Int())
+
+    def resolve_user(self, info, id):
+        return User.objects.get(pk=id)
+
+    def resolve_all_users(self, info):
+        return User.objects.all()
+
+    def resolve_task(self, info, id):
+        return Task.objects.get(pk=id)
+
+class CreateTask(graphene.Mutation):
+    class Arguments:
+        title = graphene.String()
+        user_id = graphene.Int()
+
+    task = graphene.Field(TaskType)
+
+    def mutate(self, info, title, user_id):
+        user = User.objects.get(pk=user_id)
+        task = Task.objects.create(title=title, owner=user)
+        return CreateTask(task=task)
+
+class Mutation(graphene.ObjectType):
+    create_task = CreateTask.Field()
+
+schema = graphene.Schema(query=Query, mutation=Mutation)
+
+# settings.py
+GRAPHENE = {
+    'SCHEMA': 'myapp.schema.schema'
+}
+
+# urls.py
+from graphene_django.views import GraphQLView
+urlpatterns = [
+    path('graphql/', GraphQLView.as_view(graphiql=True)),
+]
+
+# Client makes single request:
+# POST /graphql/
+# {
+#   user(id: 123) { name, tasks { title } }
+# }
+```
+
+**Advanced GraphQL Features:**
+
+```python
+# Nested queries
+query {
+  user(id: 123) {
+    name
+    tasks {
+      title
+      project {
+        name
+        owner {
+          name
+        }
+      }
+    }
+  }
+}
+
+# Fragments (reusable fields)
+fragment TaskInfo on Task {
+  id
+  title
+  status
+  priority
+}
+
+query {
+  user(id: 123) {
+    name
+    tasks {
+      ...TaskInfo
+    }
+  }
+}
+
+# Variables
+query GetUser($userId: Int!) {
+  user(id: $userId) {
+    name
+    email
+  }
+}
+
+# Mutations
+mutation CreateTask($title: String!, $userId: Int!) {
+  createTask(title: $title, userId: $userId) {
+    task {
+      id
+      title
+    }
+  }
+}
+
+# Subscriptions (real-time)
+subscription {
+  taskCreated {
+    id
+    title
+    owner {
+      name
+    }
+  }
+}
+```
+
+**Comparison Table:**
+
+| Feature | REST | GraphQL |
+|---------|------|----------|
+| **Endpoints** | Multiple (`/users`, `/tasks`) | Single (`/graphql`) |
+| **Data Fetching** | Fixed structure | Client specifies |
+| **Over-fetching** | Common | None |
+| **Under-fetching** | Common (N+1) | None |
+| **Versioning** | URL versioning (`/v1/`, `/v2/`) | No versioning needed |
+| **Caching** | HTTP caching (easy) | Custom (harder) |
+| **File Upload** | Standard | Custom implementation |
+| **Learning Curve** | Easy | Steep |
+| **Tooling** | Mature | Growing |
+| **Error Handling** | HTTP status codes | Always 200, errors in response |
+| **Real-time** | WebSockets/SSE | Subscriptions (built-in) |
+
+**When to use REST:**
+- Simple CRUD operations
+- Public APIs (easier to document/consume)
+- Caching important
+- Standard HTTP features needed
+
+**When to use GraphQL:**
+- Complex data requirements
+- Multiple clients (mobile, web) with different needs
+- Rapid frontend iteration
+- Real-time features
+
+---
+
+### 16. How does Caching work? What are caching strategies?
+
+**Caching** stores frequently accessed data in fast storage (RAM) to reduce latency and database load.
+
+```
+Without Cache:
+┌────────┐         ┌──────────┐         ┌──────────┐
+│ Client │────────▶│   API    │────────▶│ Database │
+└────────┘         └──────────┘         └──────────┘
+                   (slow: 100ms)        (slow: 50ms)
+                   Total: 150ms per request
+
+With Cache:
+┌────────┐         ┌──────────┐         ┌──────────┐
+│ Client │────────▶│   API    │────────▶│  Cache   │
+└────────┘         └──────────┘         │ (Redis)  │
+                   (fast: 5ms)          └────┬─────┘
+                                             │
+                                        ┌────▼─────┐
+                                        │ Database │
+                                        └──────────┘
+                   Total: 5ms (30x faster!)
+```
+
+**Caching Strategies:**
+
+**1. Cache-Aside (Lazy Loading)**
+```python
+def get_user(user_id):
+    # 1. Check cache first
+    cache_key = f"user:{user_id}"
+    user = cache.get(cache_key)
+
+    if user is not None:
+        return user  # Cache HIT
+
+    # 2. Cache MISS - fetch from database
+    user = User.objects.get(id=user_id)
+
+    # 3. Store in cache
+    cache.set(cache_key, user, timeout=3600)  # 1 hour
+
+    return user
+
+# Pros: Simple, only caches requested data
+# Cons: Cache miss penalty, stale data possible
+```
+
+**2. Write-Through**
+```python
+def update_user(user_id, data):
+    # 1. Update database
+    user = User.objects.get(id=user_id)
+    user.name = data['name']
+    user.save()
+
+    # 2. Update cache immediately
+    cache_key = f"user:{user_id}"
+    cache.set(cache_key, user, timeout=3600)
+
+    return user
+
+# Pros: Cache always fresh
+# Cons: Write latency (two operations)
+```
+
+**3. Write-Behind (Write-Back)**
+```python
+from celery import shared_task
+
+def update_user(user_id, data):
+    # 1. Update cache immediately
+    cache_key = f"user:{user_id}"
+    cache.set(cache_key, data, timeout=3600)
+
+    # 2. Async write to database
+    write_to_database.delay(user_id, data)
+
+    return data
+
+@shared_task
+def write_to_database(user_id, data):
+    user = User.objects.get(id=user_id)
+    user.name = data['name']
+    user.save()
+
+# Pros: Fast writes, reduces DB load
+# Cons: Data loss risk if cache crashes
+```
+
+**4. Read-Through**
+```python
+class CacheProxy:
+    def get_user(self, user_id):
+        cache_key = f"user:{user_id}"
+
+        # Cache handles database fetch automatically
+        user = cache.get_or_set(
+            cache_key,
+            lambda: User.objects.get(id=user_id),
+            timeout=3600
+        )
+        return user
+
+# Pros: Application doesn't manage cache
+# Cons: Requires cache proxy layer
+```
+
+**5. Refresh-Ahead**
+```python
+def get_user(user_id):
+    cache_key = f"user:{user_id}"
+    user = cache.get(cache_key)
+
+    if user is not None:
+        # Check if cache will expire soon
+        ttl = cache.ttl(cache_key)
+        if ttl < 300:  # Less than 5 minutes left
+            # Refresh cache asynchronously
+            refresh_cache.delay(cache_key, user_id)
+
+        return user
+
+    # Cache miss - fetch and cache
+    user = User.objects.get(id=user_id)
+    cache.set(cache_key, user, timeout=3600)
+    return user
+
+@shared_task
+def refresh_cache(cache_key, user_id):
+    user = User.objects.get(id=user_id)
+    cache.set(cache_key, user, timeout=3600)
+
+# Pros: Prevents cache misses, always fast
+# Cons: Complexity, might refresh unused data
+```
+
+**Django Caching Layers:**
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'taskmaster',
+        'TIMEOUT': 300,  # 5 minutes default
+    }
+}
+
+# 1. Per-View Caching
+from django.views.decorators.cache import cache_page
+
+@cache_page(60 * 15)  # Cache for 15 minutes
+def task_list(request):
+    tasks = Task.objects.all()
+    return render(request, 'tasks.html', {'tasks': tasks})
+
+# 2. Template Fragment Caching
+# {% load cache %}
+# {% cache 500 sidebar %}
+#   ... expensive sidebar rendering ...
+# {% endcache %}
+
+# 3. Low-Level Cache API
+from django.core.cache import cache
+
+def get_task_statistics(project_id):
+    cache_key = f'project_stats:{project_id}'
+    stats = cache.get(cache_key)
+
+    if stats is None:
+        stats = {
+            'total': Task.objects.filter(project_id=project_id).count(),
+            'completed': Task.objects.filter(
+                project_id=project_id,
+                status='completed'
+            ).count()
+        }
+        cache.set(cache_key, stats, timeout=600)  # 10 minutes
+
+    return stats
+
+# 4. QuerySet Caching
+# Django automatically caches QuerySets within same request
+tasks = Task.objects.all()
+list(tasks)  # Database hit
+list(tasks)  # Uses cached result (no DB hit)
+
+# But separate variables create new QuerySets
+tasks1 = Task.objects.all()
+tasks2 = Task.objects.all()  # New QuerySet, new DB query
+
+# 5. Cached Properties
+from django.utils.functional import cached_property
+
+class Task(models.Model):
+    @cached_property
+    def completion_percentage(self):
+        # Expensive calculation, cached on instance
+        total = self.subtasks.count()
+        completed = self.subtasks.filter(status='completed').count()
+        return (completed / total * 100) if total > 0 else 0
+
+task = Task.objects.get(id=1)
+task.completion_percentage  # Calculated
+task.completion_percentage  # Cached (no recalculation)
+
+# 6. Memoization (function-level caching)
+from functools import lru_cache
+
+@lru_cache(maxsize=128)
+def fibonacci(n):
+    if n < 2:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
+
+# Cached in memory during Python process
+```
+
+**Cache Invalidation Strategies:**
+
+```python
+# 1. Time-based (TTL)
+cache.set('key', value, timeout=3600)  # Auto-expire after 1 hour
+
+# 2. Event-based (on update)
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=Task)
+def invalidate_task_cache(sender, instance, **kwargs):
+    # Invalidate related caches
+    cache.delete(f'task:{instance.id}')
+    cache.delete(f'project_stats:{instance.project_id}')
+    cache.delete(f'user_tasks:{instance.owner_id}')
+
+# 3. Manual invalidation
+def update_task(task_id, data):
+    task = Task.objects.get(id=task_id)
+    task.title = data['title']
+    task.save()
+
+    # Manually invalidate
+    cache.delete(f'task:{task_id}')
+
+# 4. Cache versioning
+cache_version = 1
+cache.set(f'user:{user_id}', user, version=cache_version)
+
+# When schema changes, increment version
+cache_version = 2  # Old cache automatically invalid
+
+# 5. Cache tags/groups
+from django.core.cache import cache
+
+cache.set('task:1', task1, tags=['project:5'])
+cache.set('task:2', task2, tags=['project:5'])
+
+# Invalidate all tasks for project
+cache.delete_pattern('*project:5*')
+```
+
+**Multi-Level Caching:**
+
+```python
+# L1: In-memory cache (fastest, smallest)
+# L2: Redis cache (fast, medium)  
+# L3: Database (slow, largest)
+
+class MultiLevelCache:
+    def __init__(self):
+        self.l1_cache = {}  # In-memory
+        self.l2_cache = redis.Redis()  # Redis
+
+    def get(self, key):
+        # Check L1 first
+        if key in self.l1_cache:
+            return self.l1_cache[key]
+
+        # Check L2
+        value = self.l2_cache.get(key)
+        if value:
+            # Promote to L1
+            self.l1_cache[key] = value
+            return value
+
+        # Cache miss - fetch from database
+        value = self.fetch_from_db(key)
+
+        # Store in both levels
+        self.l1_cache[key] = value
+        self.l2_cache.set(key, value, ex=3600)
+
+        return value
+
+    def set(self, key, value):
+        self.l1_cache[key] = value
+        self.l2_cache.set(key, value, ex=3600)
+
+# CDN (L0) → Application Cache (L1) → Redis (L2) → Database (L3)
+```
+
+**Cache Stampede Prevention:**
+
+```python
+import time
+import random
+
+def get_with_stampede_protection(key):
+    """Prevent thundering herd on cache expiry"""
+    value = cache.get(key)
+
+    if value is None:
+        # Add random jitter to prevent simultaneous requests
+        lock_key = f'lock:{key}'
+
+        # Try to acquire lock
+        if cache.add(lock_key, '1', timeout=10):
+            try:
+                # Only one process fetches data
+                value = expensive_database_query()
+                cache.set(key, value, timeout=3600)
+            finally:
+                cache.delete(lock_key)
+        else:
+            # Other processes wait briefly and retry
+            time.sleep(random.uniform(0.1, 0.5))
+            value = get_with_stampede_protection(key)  # Retry
+
+    return value
+```
+
+**Caching Best Practices:**
+
+1. **Cache hot data** (frequently accessed)
+2. **Set appropriate TTL** (balance freshness vs performance)
+3. **Handle cache failures** gracefully (fallback to DB)
+4. **Monitor cache hit rate** (aim for >80%)
+5. **Use cache keys wisely** (include version, tenant, etc.)
+6. **Avoid caching user-specific data** globally
+7. **Compress large values** before caching
+8. **Use cache warming** for predictable access patterns
+
+---
+
+### 17. What is the difference between Strong and Eventual Consistency?
+
+**Strong Consistency**: All clients see the same data at the same time (immediate)
+**Eventual Consistency**: Clients may see different data temporarily, but will converge (delayed)
+
+```
+STRONG CONSISTENCY:
+Time →
+┌──────┬────────┬────────┬────────┐
+│ T1   │ T2     │ T3     │ T4     │
+├──────┼────────┼────────┼────────┤
+│Write │        │        │        │
+│X=1   │        │        │        │
+│  ↓   │        │        │        │
+│ DB   │ Read   │ Read   │ Read   │
+│ X=1  │ X=1 ✓  │ X=1 ✓  │ X=1 ✓  │
+└──────┴────────┴────────┴────────┘
+All reads see latest write immediately
+
+EVENTUAL CONSISTENCY:
+Time →
+┌──────┬────────┬────────┬────────┐
+│ T1   │ T2     │ T3     │ T4     │
+├──────┼────────┼────────┼────────┤
+│Write │ Read   │ Read   │ Read   │
+│X=1   │ X=0 ❌ │ X=0 ❌ │ X=1 ✓  │
+│  ↓   │(stale) │(stale) │(fresh) │
+│Repli-│        │        │        │
+│cating│        │        │        │
+└──────┴────────┴────────┴────────┘
+Reads may see stale data until replication completes
+```
+
+**Strong Consistency Example (SQL Database):**
+
+```python
+from django.db import transaction
+
+# ACID guarantees strong consistency
+@transaction.atomic
+def transfer_money(from_account, to_account, amount):
+    # Read latest balance
+    from_acc = Account.objects.select_for_update().get(id=from_account)
+    to_acc = Account.objects.select_for_update().get(id=to_account)
+
+    # Deduct from sender
+    from_acc.balance -= amount
+    from_acc.save()
+
+    # Add to receiver
+    to_acc.balance += amount
+    to_acc.save()
+
+    # All reads after this see updated balances immediately
+    # No intermediate state visible
+
+# Subsequent read sees latest data
+account = Account.objects.get(id=from_account)
+print(account.balance)  # Updated balance (strong consistency)
+```
+
+**Eventual Consistency Example (NoSQL/Distributed):**
+
+```python
+# MongoDB with replica set
+from pymongo import MongoClient
+
+client = MongoClient('mongodb://localhost:27017/')
+db = client.taskmaster
+
+# Write to primary
+db.users.update_one(
+    {'_id': user_id},
+    {'$set': {'status': 'premium'}}
+)
+
+# Read from replica (might be stale)
+user = db.users.find_one(
+    {'_id': user_id},
+    read_preference=ReadPreference.SECONDARY  # Read from replica
+)
+print(user['status'])  # Might still be 'free' (eventual consistency)
+
+# Wait a bit...
+time.sleep(0.1)
+
+# Now replica caught up
+user = db.users.find_one({'_id': user_id})
+print(user['status'])  # Now 'premium'
+```
+
+**CAP Theorem:**
+
+```
+CAP Theorem: Can only have 2 out of 3:
+
+C - Consistency (all nodes see same data)
+A - Availability (system always responds)
+P - Partition Tolerance (works despite network failures)
+
+        Consistency
+           /  \
+          /    \
+         /      \
+        /   CA   \
+       /  (RDBMS) \
+      /____________\
+     /      |       \
+    /   CP  |  AP    \
+   / (Mongo)| (Cassandra)\
+  /____________________ \
+ Partition         Availability
+ Tolerance
+
+CP Systems: MongoDB, HBase, Redis
+- Sacrifice availability for consistency
+- May reject writes during partition
+
+AP Systems: Cassandra, DynamoDB, Riak
+- Sacrifice consistency for availability  
+- Accept writes even during partition
+- Eventual consistency
+
+CA Systems: PostgreSQL, MySQL (single node)
+- No partition tolerance
+- Fails if network splits
+```
+
+**Django with Eventual Consistency:**
+
+```python
+# Using Celery for async updates (eventual consistency)
+from celery import shared_task
+
+def create_task(request):
+    # 1. Write to primary database (immediate)
+    task = Task.objects.create(
+        title=request.data['title'],
+        owner=request.user
+    )
+
+    # 2. Update search index (eventual - async)
+    update_search_index.delay(task.id)
+
+    # 3. Update analytics (eventual - async)
+    track_task_creation.delay(task.id)
+
+    # 4. Send notifications (eventual - async)
+    notify_team.delay(task.id)
+
+    return Response(TaskSerializer(task).data)
+
+@shared_task
+def update_search_index(task_id):
+    # Elasticsearch index updated eventually
+    task = Task.objects.get(id=task_id)
+    es_client.index(
+        index='tasks',
+        id=task_id,
+        document={
+            'title': task.title,
+            'description': task.description
+        }
+    )
+
+# Search might not find newly created task immediately
+# But will find it eventually (seconds later)
+```
+
+**Handling Eventual Consistency:**
+
+```python
+# 1. Read Your Own Writes
+class TaskViewSet(viewsets.ModelViewSet):
+    def create(self, request):
+        # Write to master
+        task = Task.objects.create(**request.data)
+
+        # Read from master (not replica) to ensure consistency
+        task_refreshed = Task.objects.using('master').get(id=task.id)
+
+        return Response(TaskSerializer(task_refreshed).data)
+
+# 2. Version Vectors (conflict detection)
+class Document(models.Model):
+    content = models.TextField()
+    version = models.IntegerField(default=0)
+    last_modified = models.DateTimeField(auto_now=True)
+
+def update_document(doc_id, new_content, expected_version):
+    doc = Document.objects.get(id=doc_id)
+
+    if doc.version != expected_version:
+        # Conflict! Someone else updated
+        raise ConflictError("Document was modified by someone else")
+
+    doc.content = new_content
+    doc.version += 1
+    doc.save()
+
+# 3. CRDTs (Conflict-free Replicated Data Types)
+class Counter:
+    """Grow-only counter (CRDT)"""
+    def __init__(self):
+        self.counts = {}  # {node_id: count}
+
+    def increment(self, node_id):
+        self.counts[node_id] = self.counts.get(node_id, 0) + 1
+
+    def value(self):
+        return sum(self.counts.values())
+
+    def merge(self, other):
+        # Merge from another replica
+        for node_id, count in other.counts.items():
+            self.counts[node_id] = max(
+                self.counts.get(node_id, 0),
+                count
+            )
+
+# 4. Anti-Entropy (background sync)
+@shared_task
+def sync_replicas():
+    """Periodically sync data between replicas"""
+    master_tasks = Task.objects.using('master').all()
+    replica_tasks = Task.objects.using('replica').all()
+
+    for task in master_tasks:
+        Task.objects.using('replica').update_or_create(
+            id=task.id,
+            defaults={
+                'title': task.title,
+                'status': task.status,
+                # ... other fields
+            }
+        )
+```
+
+**Comparison Table:**
+
+| Feature | Strong Consistency | Eventual Consistency |
+|---------|-------------------|----------------------|
+| **Read After Write** | Always latest | May be stale |
+| **Performance** | Slower (locks/coordination) | Faster (no locks) |
+| **Availability** | Lower (blocks on partition) | Higher (always available) |
+| **Scalability** | Harder | Easier |
+| **Complexity** | Simpler | More complex |
+| **Use Cases** | Banking, inventory | Social media, analytics |
+| **Examples** | PostgreSQL, MySQL | Cassandra, DynamoDB |
+| **Conflicts** | Prevented | Must be resolved |
+
+**When to use Strong Consistency:**
+- Financial transactions
+- Inventory management
+- Booking systems
+- Any operation requiring ACID
+
+**When to use Eventual Consistency:**
+- Social media feeds
+- Analytics/metrics
+- Caching layers
+- Content distribution
+- Read-heavy workloads
+
+---
+
+### 18. How does Message Queue work?
+
+**Message Queue** is an asynchronous communication pattern where messages are stored in a queue until processed.
+
+```
+Message Queue Architecture:
+
+┌──────────┐        ┌────────────┐        ┌──────────┐
+│ Producer │───────▶│   Queue    │───────▶│ Consumer │
+│(Service A│        │            │        │(Service B│
+└──────────┘        │ ┌────────┐ │        └──────────┘
+                    │ │ Msg 1  │ │
+                    │ ├────────┤ │
+                    │ │ Msg 2  │ │
+                    │ ├────────┤ │
+                    │ │ Msg 3  │ │
+                    │ └────────┘ │
+                    └────────────┘
+
+Flow:
+1. Producer sends message to queue
+2. Queue stores message persistently
+3. Consumer polls queue for messages
+4. Consumer processes message
+5. Consumer acknowledges completion
+6. Queue removes message
+
+Benefits:
+- Decoupling (producer/consumer independent)
+- Reliability (messages not lost)
+- Load leveling (handle traffic spikes)
+- Scalability (multiple consumers)
+```
+
+**Django + RabbitMQ (Celery):**
+
+```python
+# Producer (Django view)
+from celery import shared_task
+
+@shared_task
+def send_email(to_email, subject, body):
+    """Background task to send email"""
+    import smtplib
+    # ... email sending logic ...
+    return f"Email sent to {to_email}"
+
+@shared_task
+def process_image(image_path):
+    """Background task to process image"""
+    from PIL import Image
+    img = Image.open(image_path)
+    # ... image processing ...
+    return "Image processed"
+
+def create_task(request):
+    # Create task in database
+    task = Task.objects.create(**request.data)
+
+    # Queue background jobs (producers)
+    send_email.delay(
+        to_email=task.owner.email,
+        subject='Task Created',
+        body=f'Task "{task.title}" was created'
+    )
+
+    if task.attachment:
+        process_image.delay(task.attachment.path)
+
+    return Response(TaskSerializer(task).data)
+
+# Consumer (Celery worker)
+# celery -A taskmaster worker --loglevel=info
+
+# Multiple workers can consume from same queue
+# celery -A taskmaster worker --concurrency=4
+```
+
+**RabbitMQ Direct Integration:**
+
+```python
+import pika
+import json
+
+# Producer
+class MessageProducer:
+    def __init__(self):
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters('localhost')
+        )
+        self.channel = self.connection.channel()
+
+        # Declare queue
+        self.channel.queue_declare(queue='task_queue', durable=True)
+
+    def send_message(self, message):
+        self.channel.basic_publish(
+            exchange='',
+            routing_key='task_queue',
+            body=json.dumps(message),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # Persistent message
+            )
+        )
+
+    def close(self):
+        self.connection.close()
+
+# Consumer
+class MessageConsumer:
+    def __init__(self):
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters('localhost')
+        )
+        self.channel = self.connection.channel()
+        self.channel.queue_declare(queue='task_queue', durable=True)
+
+        # Fair dispatch (one message per worker at a time)
+        self.channel.basic_qos(prefetch_count=1)
+
+    def callback(self, ch, method, properties, body):
+        message = json.loads(body)
+        print(f"Processing: {message}")
+
+        try:
+            # Process message
+            self.process_task(message)
+
+            # Acknowledge (remove from queue)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        except Exception as e:
+            # Reject and requeue
+            ch.basic_nack(
+                delivery_tag=method.delivery_tag,
+                requeue=True
+            )
+
+    def process_task(self, message):
+        # Business logic
+        task_id = message['task_id']
+        # ... process ...
+
+    def start_consuming(self):
+        self.channel.basic_consume(
+            queue='task_queue',
+            on_message_callback=self.callback
+        )
+        self.channel.start_consuming()
+
+# Usage
+producer = MessageProducer()
+producer.send_message({'task_id': 123, 'action': 'send_email'})
+producer.close()
+
+consumer = MessageConsumer()
+consumer.start_consuming()  # Blocks and waits for messages
+```
+
+**Advanced Queue Patterns:**
+
+```python
+# 1. Dead Letter Queue (DLQ) - Failed messages
+from celery import Task
+
+class TaskWithRetry(Task):
+    autoretry_for = (Exception,)
+    retry_kwargs = {'max_retries': 3}
+    retry_backoff = True  # Exponential backoff
+
+@shared_task(base=TaskWithRetry)
+def unreliable_task(data):
+    # If fails 3 times, goes to DLQ
+    result = risky_operation(data)
+    return result
+
+# 2. Priority Queue - Important messages first
+@shared_task
+def urgent_notification(user_id):
+    # High priority
+    pass
+
+urgent_notification.apply_async(
+    args=[user_id],
+    priority=9  # 0-9, higher = more priority
+)
+
+# 3. Delayed Queue - Schedule for future
+@shared_task
+def send_reminder(task_id):
+    task = Task.objects.get(id=task_id)
+    # Send reminder email
+
+# Schedule for 24 hours later
+send_reminder.apply_async(
+    args=[task_id],
+    countdown=86400  # Seconds
+)
+
+# Or specific time
+from datetime import datetime, timedelta
+send_reminder.apply_async(
+    args=[task_id],
+    eta=datetime.now() + timedelta(days=1)
+)
+
+# 4. Fanout - Broadcast to multiple consumers
+from celery import group
+
+def broadcast_update(task_id):
+    # Send to multiple services in parallel
+    job = group(
+        update_search_index.s(task_id),
+        update_analytics.s(task_id),
+        send_notifications.s(task_id),
+        update_cache.s(task_id),
+    )
+    job.apply_async()
+
+# 5. Work Chaining - Sequential processing
+from celery import chain
+
+def process_order(order_id):
+    # Chain of tasks
+    workflow = chain(
+        validate_order.s(order_id),
+        charge_payment.s(),
+        ship_order.s(),
+        send_confirmation.s()
+    )
+    workflow.apply_async()
+
+@shared_task
+def validate_order(order_id):
+    # ... validation ...
+    return order_id  # Passed to next task
+
+@shared_task
+def charge_payment(order_id):
+    # ... payment ...
+    return order_id
+
+# 6. Saga Pattern - Distributed transaction
+from celery import chain
+
+def create_booking_saga(booking_data):
+    # Try to book flight, hotel, car
+    # If any fails, compensate (rollback previous steps)
+
+    workflow = chain(
+        book_flight.s(booking_data),
+        book_hotel.s(),
+        book_car.s(),
+    )
+
+    try:
+        result = workflow.apply_async().get()
+    except Exception as e:
+        # Compensate (rollback)
+        compensate_booking.delay(booking_data)
+
+@shared_task
+def book_flight(booking_data):
+    flight = Flight.book(**booking_data['flight'])
+    if not flight:
+        raise BookingError("Flight booking failed")
+    booking_data['flight_id'] = flight.id
+    return booking_data
+
+@shared_task
+def compensate_booking(booking_data):
+    # Undo all bookings
+    if 'flight_id' in booking_data:
+        Flight.cancel(booking_data['flight_id'])
+    if 'hotel_id' in booking_data:
+        Hotel.cancel(booking_data['hotel_id'])
+```
+
+**Message Queue Best Practices:**
+
+```python
+# 1. Idempotency - Safe to retry
+@shared_task
+def process_payment(payment_id):
+    payment = Payment.objects.get(id=payment_id)
+
+    # Check if already processed
+    if payment.status == 'completed':
+        return "Already processed"  # Idempotent
+
+    # Process payment
+    result = charge_card(payment)
+    payment.status = 'completed'
+    payment.save()
+
+# 2. Timeouts - Don't wait forever
+@shared_task(time_limit=300, soft_time_limit=290)
+def long_running_task():
+    # Hard limit: 300s (raises exception)
+    # Soft limit: 290s (SoftTimeLimitExceeded)
+    pass
+
+# 3. Monitoring
+from celery.signals import task_success, task_failure
+
+@task_success.connect
+def task_success_handler(sender=None, result=None, **kwargs):
+    # Log success, update metrics
+    metrics.increment('celery.task.success')
+
+@task_failure.connect
+def task_failure_handler(sender=None, exception=None, **kwargs):
+    # Alert on failures
+    logger.error(f"Task failed: {exception}")
+    send_alert_to_slack(f"Task failed: {exception}")
+
+# 4. Rate Limiting
+@shared_task(rate_limit='10/m')  # Max 10 calls per minute
+def api_call_task(url):
+    response = requests.get(url)
+    return response.json()
+
+# 5. Task Results
+from celery.result import AsyncResult
+
+# Queue task
+result = process_data.delay(data)
+
+# Check status
+if result.ready():
+    value = result.get()  # Block until ready
+else:
+    print("Still processing...")
+
+# Get result with timeout
+try:
+    value = result.get(timeout=10)
+except TimeoutError:
+    print("Task took too long")
+```
+
+---
+
+### 19. What is the difference between TCP and UDP?
+
+**TCP (Transmission Control Protocol)**: Reliable, connection-oriented protocol
+**UDP (User Datagram Protocol)**: Fast, connectionless protocol
+
+```
+TCP (Reliable, Ordered):
+Client                          Server
+  │                               │
+  │───── SYN ─────────────────────▶│ 1. Connection request
+  │◀──── SYN-ACK ─────────────────│ 2. Acknowledge + request
+  │───── ACK ─────────────────────▶│ 3. Acknowledge
+  │    (3-way handshake)           │
+  │                               │
+  │───── Data Packet 1 ───────────▶│
+  │◀──── ACK 1 ────────────────────│ Acknowledged
+  │───── Data Packet 2 ───────────▶│
+  │◀──── ACK 2 ────────────────────│ Acknowledged
+  │                               │
+  │───── FIN ─────────────────────▶│ Close connection
+  │◀──── ACK ─────────────────────│
+  
+Features:
+✓ Guaranteed delivery
+✓ Ordered packets
+✓ Error checking
+✓ Flow control
+✓ Congestion control
+
+UDP (Fast, Unordered):
+Client                          Server
+  │                               │
+  │───── Packet 1 ────────────────▶│ No handshake
+  │───── Packet 2 ────────────────▶│ No ACK
+  │───── Packet 3 ────────────────▶│ May arrive out of order
+  │      (Packet 2 lost) ✗         │ May be lost
+  │                               │
+  
+Features:
+✗ No delivery guarantee
+✗ No ordering
+✓ Faster (no overhead)
+✓ Lower latency
+✓ Supports broadcast/multicast
+```
+
+**Comparison Table:**
+
+| Feature | TCP | UDP |
+|---------|-----|-----|
+| **Connection** | Connection-oriented (handshake) | Connectionless |
+| **Reliability** | Guaranteed delivery | No guarantee (packets may be lost) |
+| **Ordering** | Packets ordered | No ordering |
+| **Speed** | Slower (more overhead) | Faster (minimal overhead) |
+| **Error Checking** | Yes (retransmits) | Basic (no retransmit) |
+| **Overhead** | High (20-60 bytes header) | Low (8 bytes header) |
+| **Flow Control** | Yes | No |
+| **Use Cases** | HTTP, FTP, Email | Video streaming, Gaming, DNS, VoIP |
+| **When Packet Loss** | Retransmits | Drops packet |
+
+**Django WebSocket (TCP):**
+
+```python
+# Using Django Channels (WebSocket over TCP)
+# consumers.py
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+
+class TaskConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_name = self.scope['url_route']['kwargs']['room_name']
+        self.room_group_name = f'task_{self.room_name}'
+
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+
+        await self.accept()  # TCP handshake
+
+    async def disconnect(self, close_code):
+        # Leave room group
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        # Receive message (TCP ensures delivery)
+        data = json.loads(text_data)
+        message = data['message']
+
+        # Broadcast to room
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'task_message',
+                'message': message
+            }
+        )
+
+    async def task_message(self, event):
+        # Send message to WebSocket
+        await self.send(text_data=json.dumps({
+            'message': event['message']
+        }))
+
+# routing.py
+from django.urls import path
+from . import consumers
+
+websocket_urlpatterns = [
+    path('ws/tasks/<str:room_name>/', consumers.TaskConsumer.as_asgi()),
+]
+
+# JavaScript client
+# const socket = new WebSocket('ws://localhost:8000/ws/tasks/123/');
+# socket.onmessage = (e) => {
+#     const data = JSON.parse(e.data);
+#     console.log(data.message);  // Guaranteed delivery
+# };
+```
+
+**When to use TCP:**
+- **HTTP/HTTPS** - Web browsing
+- **Email** (SMTP, IMAP, POP3)
+- **File transfers** (FTP, SFTP)
+- **SSH** - Remote access
+- **WebSockets** - Real-time chat
+- **Database connections** - PostgreSQL, MySQL
+
+**When to use UDP:**
+- **Video streaming** (YouTube, Netflix) - lost frames acceptable
+- **Online gaming** - low latency critical
+- **Voice calls** (VoIP, Zoom) - slight loss acceptable
+- **DNS queries** - fast lookups
+- **IoT sensors** - continuous data stream
+- **Live sports** broadcasts
+
+**Example Use Cases:**
+
+```python
+# TCP: Database connection (PostgreSQL)
+import psycopg2
+
+# TCP ensures:
+# - All queries delivered
+# - Responses received in order
+# - Connection reliable
+conn = psycopg2.connect(
+    host='localhost',
+    database='taskmaster',
+    user='postgres'
+)
+cursor = conn.cursor()
+cursor.execute("SELECT * FROM tasks")  # Guaranteed execution
+rows = cursor.fetchall()  # Guaranteed response
+
+# UDP: Metrics/logging (StatsD)
+import socket
+
+# UDP used for:
+# - Fire-and-forget metrics
+# - OK if some metrics lost
+# - Low overhead, high throughput
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+def send_metric(metric_name, value):
+    message = f"{metric_name}:{value}|c"
+    sock.sendto(
+        message.encode(),
+        ('statsd-server', 8125)
+    )  # No ACK needed, very fast
+
+send_metric('tasks.created', 1)
+send_metric('api.requests', 1)
+```
+
+---
+
+### 20. How does Database Replication work?
+
+**Database Replication** copies data from one database (primary) to one or more databases (replicas) for redundancy and scalability.
+
+```
+Master-Replica Replication:
+
+┌─────────────────┐
+│  APPLICATION    │
+└────┬───────┬────┘
+     │       │
+     │Writes │Reads
+     │       │
+┌────▼────┐  │    ┌──────────┐
+│ PRIMARY │──┼───▶│ REPLICA 1│
+│(Master) │  │    └──────────┘
+│         │  │
+│  Writes │  │    ┌──────────┐
+│ happen  │──┼───▶│ REPLICA 2│
+│  here   │  │    └──────────┘
+└─────────┘  │
+     │       │    ┌──────────┐
+     │       └───▶│ REPLICA 3│
+     │            └──────────┘
+     │ Replication
+     ▼ (async/sync)
+
+Benefits:
+✓ Read scalability (distribute reads)
+✓ High availability (failover)
+✓ Backup (point-in-time recovery)
+✓ Geographic distribution
+```
+
+**Django Multi-Database Setup:**
+
+```python
+# settings.py
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'taskmaster',
+        'USER': 'postgres',
+        'HOST': 'primary-db.example.com',  # Write/Primary
+        'PORT': '5432',
+    },
+    'replica1': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'taskmaster',
+        'USER': 'postgres',
+        'HOST': 'replica1-db.example.com',  # Read-only replica
+        'PORT': '5432',
+    },
+    'replica2': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'taskmaster',
+        'USER': 'postgres',
+        'HOST': 'replica2-db.example.com',  # Read-only replica
+        'PORT': '5432',
+    },
+}
+
+# Database Router
+import random
+
+class PrimaryReplicaRouter:
+    def db_for_read(self, model, **hints):
+        """Direct reads to random replica"""
+        return random.choice(['replica1', 'replica2'])
+
+    def db_for_write(self, model, **hints):
+        """Direct writes to primary"""
+        return 'default'
+
+    def allow_relation(self, obj1, obj2, **hints):
+        """Allow relations between objects"""
+        return True
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        """Only migrate on primary"""
+        return db == 'default'
+
+DATABASE_ROUTERS = ['path.to.PrimaryReplicaRouter']
+
+# Usage
+# Reads automatically go to replicas
+tasks = Task.objects.all()  # Reads from replica1 or replica2
+
+# Writes go to primary
+task = Task.objects.create(title="New task")  # Writes to default
+
+# Force read from primary (for consistency)
+task = Task.objects.using('default').get(id=123)
+
+# Force read from specific replica
+task = Task.objects.using('replica1').get(id=123)
+```
+
+**Replication Strategies:**
+
+**1. Asynchronous Replication (Most Common)**
+```python
+"""
+Primary commits first, then replicates (eventual consistency)
+
+Timeline:
+T1: Write to Primary ✓ (returns success)
+T2: Write replicating to Replica 1...
+T3: Write replicating to Replica 2...
+T4: All replicas updated ✓
+
+Pros:
+- Fast writes (doesn't wait)
+- Primary not blocked
+
+Cons:
+- Replication lag (seconds)
+- Read-after-write may see stale data
+- Data loss if primary fails before replication
+"""
+
+def create_task(request):
+    # Write to primary
+    task = Task.objects.create(title=request.data['title'])
+
+    # Immediately read from replica (might not see it yet!)
+    tasks = Task.objects.all()  # Might not include new task
+    
+    # Solution: Read from primary after write
+    task = Task.objects.using('default').get(id=task.id)
+```
+
+**2. Synchronous Replication**
+```python
+"""
+Primary waits for replica(s) to confirm before committing
+
+Timeline:
+T1: Write to Primary (waiting...)
+T2: Write to Replica 1 (waiting...)
+T3: Replica 1 confirms ✓
+T4: Primary commits ✓ (returns success)
+
+Pros:
+- No replication lag
+- Strong consistency
+- No data loss
+
+Cons:
+- Slower writes (waits for replicas)
+- Primary blocked by slow replicas
+- Lower availability (failure blocks writes)
+"""
+
+# PostgreSQL synchronous replication
+# postgresql.conf
+# synchronous_commit = on
+# synchronous_standby_names = 'replica1, replica2'
+```
+
+**3. Semi-Synchronous Replication**
+```python
+"""
+Hybrid: Wait for at least one replica (compromise)
+
+Timeline:
+T1: Write to Primary (waiting...)
+T2: Write to Replica 1 (confirms) ✓
+T3: Primary commits ✓ (returns success)
+T4: Write to Replica 2 (async)...
+
+Pros:
+- Balance between speed and safety
+- At least one replica has data
+
+Cons:
+- Still has some lag
+- Complexity in configuration
+"""
+```
+
+**Handling Replication Lag:**
+
+```python
+# Problem: Read-after-write inconsistency
+def update_task_status(request, task_id):
+    # Write to primary
+    task = Task.objects.get(id=task_id)
+    task.status = 'completed'
+    task.save()  # Writes to primary
+
+    # Redirect to task list
+    return redirect('task-list')
+
+def task_list(request):
+    # Reads from replica (might not see update yet!)
+    tasks = Task.objects.all()  # Replication lag!
+    return render(request, 'tasks.html', {'tasks': tasks})
+
+# Solution 1: Read from primary after write
+def update_task_status(request, task_id):
+    task = Task.objects.using('default').get(id=task_id)
+    task.status = 'completed'
+    task.save()
+
+    # Force read from primary for this user's next request
+    request.session['use_primary'] = True
+    return redirect('task-list')
+
+class PrimaryReplicaRouter:
+    def db_for_read(self, model, **hints):
+        request = hints.get('request')
+        if request and request.session.get('use_primary'):
+            return 'default'  # Read from primary
+        return random.choice(['replica1', 'replica2'])
+
+# Solution 2: Wait for replication
+import time
+
+def update_task_status(request, task_id):
+    task = Task.objects.get(id=task_id)
+    task.status = 'completed'
+    task.save()
+
+    # Wait for replication (crude but works)
+    time.sleep(0.1)  # 100ms
+
+    return redirect('task-list')
+
+# Solution 3: Version-based routing
+class Task(models.Model):
+    version = models.IntegerField(default=0)
+
+    def save(self, *args, **kwargs):
+        self.version += 1
+        super().save(*args, **kwargs)
+
+def get_task_with_version(task_id, expected_version):
+    """Keep trying until replica has correct version"""
+    max_retries = 10
+    for i in range(max_retries):
+        task = Task.objects.get(id=task_id)
+        if task.version >= expected_version:
+            return task
+        time.sleep(0.01)  # Wait 10ms
+    raise ReplicationLagError()
+```
+
+**Failover (High Availability):**
+
+```python
+# Automatic failover when primary fails
+class FailoverRouter:
+    def __init__(self):
+        self.primary = 'default'
+        self.replicas = ['replica1', 'replica2']
+
+    def db_for_write(self, model, **hints):
+        # Check if primary is healthy
+        if not self.is_db_healthy(self.primary):
+            # Promote replica to primary
+            new_primary = self.replicas[0]
+            logger.warning(f"Primary down, promoting {new_primary}")
+            self.primary = new_primary
+            self.replicas = self.replicas[1:]
+
+        return self.primary
+
+    def is_db_healthy(self, db_alias):
+        try:
+            from django.db import connections
+            conn = connections[db_alias]
+            conn.cursor().execute("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"DB {db_alias} unhealthy: {e}")
+            return False
+```
+
+**Monitoring Replication:**
+
+```python
+# Check replication lag
+from django.db import connections
+
+def get_replication_lag():
+    """Returns replication lag in seconds"""
+    with connections['default'].cursor() as cursor:
+        cursor.execute("""
+            SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))
+        """)
+        lag = cursor.fetchone()[0]
+        return lag if lag else 0
+
+# Alert if lag too high
+lag = get_replication_lag()
+if lag > 10:  # More than 10 seconds behind
+    send_alert(f"Replication lag: {lag}s")
+
+# Health check endpoint
+from rest_framework.decorators import api_view
+
+@api_view(['GET'])
+def health_check(request):
+    lag = get_replication_lag()
+    
+    return Response({
+        'status': 'healthy' if lag < 5 else 'degraded',
+        'replication_lag_seconds': lag,
+        'replicas': ['replica1', 'replica2']
+    })
+```
+
+---
+
+*(Continuing with remaining questions 21-40 in next section...)*
